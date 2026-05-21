@@ -113,6 +113,96 @@ function decorateButtons(main) {
   });
 }
 
+const BACK_LINK_STORAGE_KEY = 'stryker:lastPageTitle';
+const BACK_LINK_FALLBACK_TEXT = 'Previous page';
+
+function cleanReferrerTitle(title) {
+  return title.replace(/\s*\|\s*Stryker\s*$/i, '').trim() || BACK_LINK_FALLBACK_TEXT;
+}
+
+function isBackLinkParagraph(p) {
+  if (p.children.length !== 1) return false;
+  const a = p.firstElementChild;
+  if (a.tagName !== 'A') return false;
+  if (a.textContent.trim().toLowerCase() !== 'back') return false;
+  try {
+    const href = new URL(a.href, window.location.origin);
+    return href.origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+function findBackLinkParagraph(main) {
+  const paragraph = [...main.querySelectorAll('p')].find(isBackLinkParagraph);
+  return paragraph ? { paragraph, anchor: paragraph.firstElementChild } : null;
+}
+
+/**
+ * Replace the article-level "back" link with one that:
+ *  - is removed when the visitor came directly or from another domain,
+ *  - shows the previous page's title (read from sessionStorage) for accessibility.
+ * @param {Element} main The main container element
+ */
+function decorateBackLink(main) {
+  const found = findBackLinkParagraph(main);
+  if (!found) return;
+  const { paragraph, anchor } = found;
+
+  const { referrer } = document;
+  if (!referrer) {
+    paragraph.remove();
+    return;
+  }
+  let referrerUrl;
+  try {
+    referrerUrl = new URL(referrer);
+  } catch {
+    paragraph.remove();
+    return;
+  }
+  if (referrerUrl.origin !== window.location.origin) {
+    paragraph.remove();
+    return;
+  }
+
+  let title = BACK_LINK_FALLBACK_TEXT;
+  try {
+    const raw = sessionStorage.getItem(BACK_LINK_STORAGE_KEY);
+    if (raw) {
+      const stored = JSON.parse(raw);
+      if (stored && stored.url === referrer && stored.title) {
+        title = cleanReferrerTitle(stored.title);
+      }
+    }
+  } catch { /* ignore storage errors */ }
+
+  anchor.href = referrer;
+  anchor.setAttribute('aria-label', `Back to: ${title}`);
+  anchor.textContent = '';
+  const prefix = document.createElement('span');
+  prefix.className = 'visually-hidden';
+  prefix.textContent = 'Back to ';
+  anchor.append(prefix, document.createTextNode(title));
+}
+
+/**
+ * Persist the current page's title and URL so the next page (if same-origin)
+ * can render a meaningful back link.
+ */
+function recordPageTitleForBack() {
+  const write = () => {
+    try {
+      sessionStorage.setItem(BACK_LINK_STORAGE_KEY, JSON.stringify({
+        title: document.title,
+        url: window.location.href,
+        ts: Date.now(),
+      }));
+    } catch { /* ignore */ }
+  };
+  window.addEventListener('pagehide', write);
+}
+
 /**
  * Decorates the main element.
  * @param {Element} main The main element
@@ -124,6 +214,7 @@ export function decorateMain(main) {
   decorateSections(main);
   decorateBlocks(main);
   decorateButtons(main);
+  decorateBackLink(main);
 }
 
 /**
@@ -168,6 +259,8 @@ async function loadLazy(doc) {
 
   loadCSS(`${window.hlx.codeBasePath}/styles/lazy-styles.css`);
   loadFonts();
+
+  recordPageTitleForBack();
 }
 
 /**
