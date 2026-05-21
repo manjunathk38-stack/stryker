@@ -261,6 +261,10 @@ async function loadLazy(doc) {
   loadFonts();
 
   recordPageTitleForBack();
+
+  // Country-aware date formatting — load lazily so it doesn't impact LCP.
+  // eslint-disable-next-line import/no-cycle
+  import('./date-format.js').then(({ formatDates }) => formatDates(main));
 }
 
 /**

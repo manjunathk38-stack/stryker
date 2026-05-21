@@ -27,6 +27,48 @@ const TransformHook = {
   afterTransform: 'afterTransform',
 };
 
+/**
+ * Scan article body for dated <strong> entries like "04/01/2026 10:45 a.m. ET"
+ * and return the most recent date as ISO 8601 (YYYY-MM-DD), or null if none found.
+ */
+function derivePublishDate(element) {
+  const datePattern = /^(\d{1,2})\/(\d{1,2})\/(\d{4})\b/;
+  let latest = null;
+  element.querySelectorAll('strong, b').forEach((el) => {
+    const text = (el.textContent || '').trim();
+    const m = text.match(datePattern);
+    if (!m) return;
+    const month = parseInt(m[1], 10);
+    const day = parseInt(m[2], 10);
+    const year = parseInt(m[3], 10);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return;
+    const ts = Date.UTC(year, month - 1, day);
+    if (Number.isNaN(ts)) return;
+    if (!latest || ts > latest.ts) {
+      latest = {
+        ts,
+        iso: `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`,
+      };
+    }
+  });
+  return latest ? latest.iso : null;
+}
+
+/**
+ * Inject a publishDate row into the page metadata so query-index can index it.
+ * Idempotent: only writes when an authored publishDate is not already present.
+ */
+function injectPublishDateMeta(document, publishDate) {
+  if (!publishDate) return;
+  const head = document.head;
+  if (!head) return;
+  if (head.querySelector('meta[name="publishdate" i]')) return;
+  const meta = document.createElement('meta');
+  meta.setAttribute('name', 'publishdate');
+  meta.setAttribute('content', publishDate);
+  head.appendChild(meta);
+}
+
 export default function transform(hookName, element, payload) {
   if (hookName === TransformHook.beforeTransform) {
     // Cookie/consent UI and modal overlays - remove early so block parsing
@@ -66,5 +108,12 @@ export default function transform(hookName, element, payload) {
       el.removeAttribute('data-track');
       el.removeAttribute('data-tracking');
     });
+
+    // Surface the article's most recent dated entry as a publishDate meta tag
+    // so query-index can index it for downstream news listing/search.
+    if (payload && payload.document) {
+      const publishDate = derivePublishDate(element);
+      injectPublishDateMeta(payload.document, publishDate);
+    }
   }
 }

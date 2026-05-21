@@ -1,0 +1,30 @@
+version: 1
+
+indices:
+  news:
+    include:
+      - '/us/en/about/news/**'
+    exclude:
+      - '/us/en/about/news'
+    target: /us/en/about/news/query-index.json
+    properties:
+      title:
+        select: head > title
+        value: |
+          textContent(el)
+      description:
+        select: head > meta[name="description"]
+        value: |
+          attribute(el, 'content')
+      image:
+        select: head > meta[property="og:image"]
+        value: |
+          attribute(el, 'content')
+      publishDate:
+        select: head > meta[name="publishdate"]
+        value: |
+          attribute(el, 'content')
+      lastModified:
+        select: none
+        value: |
+          parseTimestamp(headers['last-modified'], 'ddd, DD MMM YYYY hh:mm:ss GMT')
