@@ -1,0 +1,8 @@
+{
+  "date.format.default": "MM/dd/yyyy h:mm a z",
+  "date.format.us": "MM/dd/yyyy h:mm a z",
+  "date.format.uk": "dd/MM/yyyy HH:mm z",
+  "date.format.de": "dd.MM.yyyy HH:mm z",
+  "date.format.fr": "dd/MM/yyyy HH:mm z",
+  "date.format.jp": "yyyy/MM/dd HH:mm z"
+}

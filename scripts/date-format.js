@@ -1,8 +1,11 @@
-const CONFIG_URL = '/configs.json';
+const REPO_CONFIG_URL = '/configs/date-formats.json';
+const DA_OVERRIDE_URL = '/configs.json';
 const CONFIG_TIMEOUT_MS = 5000;
 const FORMAT_KEY_PREFIX = 'date.format.';
 const DEFAULT_FORMAT = 'MM/dd/yyyy h:mm a z';
 
+// In-code last-resort fallback used only when both the repo JSON and the DA
+// override are unavailable (e.g., brand-new environment, network failure).
 const FALLBACK_CONFIG = {
   default: DEFAULT_FORMAT,
   us: 'MM/dd/yyyy h:mm a z',
@@ -14,38 +17,61 @@ const FALLBACK_CONFIG = {
 
 let configPromise = null;
 
+async function fetchJson(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CONFIG_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function applyEntries(target, entries) {
+  entries.forEach(([rawKey, rawValue]) => {
+    if (typeof rawKey !== 'string' || typeof rawValue !== 'string') return;
+    const key = rawKey.trim().toLowerCase();
+    const value = rawValue.trim();
+    if (!value || !key.startsWith(FORMAT_KEY_PREFIX)) return;
+    const country = key.slice(FORMAT_KEY_PREFIX.length);
+    if (country) target[country] = value;
+  });
+}
+
+function mergeRepoJson(target, json) {
+  if (!json || typeof json !== 'object') return;
+  applyEntries(target, Object.entries(json));
+}
+
+function mergeDaSheet(target, json) {
+  if (!json || typeof json !== 'object') return;
+  const rows = Array.isArray(json.data) ? json.data : [];
+  applyEntries(target, rows.map((row) => [row.key, row.value]));
+}
+
 /**
- * Fetch /configs.json once per session and reduce its rows into a
- * country -> format string map keyed by country code.
+ * Resolve the country -> format map by merging three sources:
+ *   1. In-code FALLBACK_CONFIG (last resort)
+ *   2. /configs/date-formats.json from the repo (default values)
+ *   3. /configs.json from DA (optional author overrides — wins on key collision)
  *
- * Recognised key shape: `date.format.{cc}` (e.g. `date.format.us`).
- * Falls back to FALLBACK_CONFIG on network failure or 404.
+ * Both remote fetches happen in parallel and tolerate 404/timeout silently.
  */
 async function loadDateFormatConfig() {
   if (configPromise) return configPromise;
   configPromise = (async () => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), CONFIG_TIMEOUT_MS);
-    try {
-      const response = await fetch(CONFIG_URL, { signal: controller.signal });
-      if (!response.ok) return { ...FALLBACK_CONFIG };
-      const json = await response.json();
-      const rows = Array.isArray(json.data) ? json.data : [];
-      const map = { ...FALLBACK_CONFIG };
-      rows.forEach((row) => {
-        const key = (row.key || '').trim().toLowerCase();
-        const value = (row.value || '').trim();
-        if (!value) return;
-        if (!key.startsWith(FORMAT_KEY_PREFIX)) return;
-        const country = key.slice(FORMAT_KEY_PREFIX.length);
-        if (country) map[country] = value;
-      });
-      return map;
-    } catch (e) {
-      return { ...FALLBACK_CONFIG };
-    } finally {
-      clearTimeout(timer);
-    }
+    const [repoJson, daJson] = await Promise.all([
+      fetchJson(REPO_CONFIG_URL),
+      fetchJson(DA_OVERRIDE_URL),
+    ]);
+    const map = { ...FALLBACK_CONFIG };
+    mergeRepoJson(map, repoJson);
+    mergeDaSheet(map, daJson);
+    return map;
   })();
   return configPromise;
 }
