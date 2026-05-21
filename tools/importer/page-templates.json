@@ -1,0 +1,20 @@
+{
+  "metadata": {
+    "projectType": "da"
+  },
+  "templates": [
+    {
+      "name": "news-article",
+      "urls": [
+        "https://www.stryker.com/us/en/about/news/2026/a-message-to-our-customers-03-2026.html"
+      ],
+      "description": "Stryker news/message article page with hero, article content, and related news sections",
+      "blocks": [
+        {
+          "name": "columns",
+          "instances": [".standaloneimage.aem-GridColumn--default--6"]
+        }
+      ]
+    }
+  ]
+}
